@@ -25,6 +25,49 @@ public protocol DiscoveryProvider: Sendable {
     func discover(timeout: TimeInterval) async throws -> [DiscoveredDevice]
 }
 
+public struct DiscoveryOutcome: Sendable {
+    public var devices: [DiscoveredDevice]
+    /// Vendor -> error description. A failing vendor never hides the others' results.
+    public var failures: [Vendor: String]
+}
+
+/// Runs every provider concurrently and aggregates results in provider order.
+public struct DiscoveryService: Sendable {
+    public let providers: [any DiscoveryProvider]
+
+    public init(providers: [any DiscoveryProvider]) {
+        self.providers = providers
+    }
+
+    public static func `default`() -> DiscoveryService {
+        DiscoveryService(providers: [WiZDiscoveryProvider(), CozyLifeDiscoveryProvider()])
+    }
+
+    public var vendors: [Vendor] { providers.map(\.vendor) }
+
+    public func discover(timeout: TimeInterval) async -> DiscoveryOutcome {
+        let results = await withTaskGroup(of: (Int, Vendor, Result<[DiscoveredDevice], Error>).self) { group in
+            for (index, provider) in providers.enumerated() {
+                group.addTask {
+                    do { return (index, provider.vendor, .success(try await provider.discover(timeout: timeout))) }
+                    catch { return (index, provider.vendor, .failure(error)) }
+                }
+            }
+            var collected: [(Int, Vendor, Result<[DiscoveredDevice], Error>)] = []
+            for await item in group { collected.append(item) }
+            return collected.sorted { $0.0 < $1.0 }
+        }
+        var outcome = DiscoveryOutcome(devices: [], failures: [:])
+        for (_, vendor, result) in results {
+            switch result {
+            case .success(let devices): outcome.devices += devices
+            case .failure(let error): outcome.failures[vendor] = String(describing: error)
+            }
+        }
+        return outcome
+    }
+}
+
 /// Renders the `shl discover` output.
 public enum DiscoveryReport {
     public static func render(_ devices: [DiscoveredDevice], searched: [Vendor]) -> String {
