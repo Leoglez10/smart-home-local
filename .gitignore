@@ -1,0 +1,20 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.xcuserstate
+
+# Secrets (never commit)
+.env
+.env.*
+!.env.example
+
+# Local indexes / captures
+.codegraph/
+*.pcap
+*.pcapng
+
+# macOS
+.DS_Store
