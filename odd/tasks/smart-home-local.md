@@ -34,10 +34,10 @@ TDD: strict (Swift Testing via `swift test`). Stack decision: all-Swift (L2).
 
 | ID | Specs | Route | Status | Commit |
 |----|-------|-------|--------|--------|
-| T1 | S1, S4, S9 | inline | in progress | — |
-| T2 | S2 | inline (TDD) | pending | — |
-| T3 | S3 | inline (TDD) | pending | — |
-| T4 | S3 | inline (real LAN run) | pending | — (no code) |
+| T1 | S1, S4, S9 | inline | done | 7f41d32 |
+| T2 | S2 | inline (TDD) | done | 159823a |
+| T3 | S3 | inline (TDD) | done | 9c138c2 |
+| T4 | S3 | inline (real LAN run) | partial: CozyLife found, WiZ not found | — (no code) |
 | T5 | S5 | pending | pending | — |
 | T6 | S4, S7, S8 | pending: verify CozyLife TCP 5555 read-only query on the real device | pending | — |
 | T7 | S6 | pending: SwiftUI `MenuBarExtra` app target | pending | — |
@@ -65,3 +65,4 @@ protocol. Instead:
 
 - L1 (user, verbatim, abridged only where the original message itself was cut): "Quiero iniciar un proyecto nuevo para controlar mis focos inteligentes desde mi Mac de forma local, sin depender de las aplicaciones oficiales siempre que sea posible. Tengo actualmente: - Un foco WiZ - Un foco/dispositivo compatible con CozyLife - Ambos están conectados a la misma red local que mi Mac. [...] Primero: 1. crea la carpeta 2. inicializa el proyecto 3. investiga WiZ y CozyLife 4. crea la arquitectura base 5. implementa descubrimiento WiZ 6. prueba si detectamos mi foco. Después DETENTE. [...] No continúes con la interfaz gráfica hasta comprobar que realmenteal menos un foco. y al final añade dentro del md del plan que si la investigacion falla o no encuentra usar rea mcp para hacer ingenieria inversa y cinocer y hacer la app. quisiera que fuera una app nativa de mac. que se abra de arriba deable, me ayudas?"
 - L2 (user decision): Stack = "Todo en Swift (recomendado)": Swift Package with SmartHomeCore + CLI + MenuBarExtra app; commands become `swift run shl ...` instead of npm.
+- L3 (evidence, T4): `swift run shl discover --timeout 5` on 192.0.2.11/24 found 2 CozyLife devices (192.0.2.17 and 192.0.2.18, pid `qwialM`) answering UDP 6095. No WiZ reply to the pywizlight registration probe on UDP 38899, neither from an ephemeral port nor bound to 38899, to 255.255.255.255 and 192.0.2.255. Broadcast works on this LAN (CozyLife answered), so the WiZ is likely powered off at the switch, on another network/SSID, or isolated. Next: user confirms the WiZ IP (WiZ app → device settings, or router DHCP list) to try a unicast `getPilot`.
