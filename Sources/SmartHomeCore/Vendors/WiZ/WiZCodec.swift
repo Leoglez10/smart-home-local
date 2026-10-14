@@ -1,4 +1,5 @@
 import Foundation
+import CoreFoundation
 
 /// Pure message building/parsing for the WiZ local UDP protocol (port 38899).
 /// Source: pywizlight `discovery.py` / `bulb.py` — see docs/protocols.md.
@@ -18,6 +19,35 @@ public enum WiZCodec {
 
     public static func getPilot() -> Data { request("getPilot") }
     public static func getSystemConfig() -> Data { request("getSystemConfig") }
+    public static func getModelConfig() -> Data { request("getModelConfig") }
+    public static func getUserConfig() -> Data { request("getUserConfig") }
+
+    /// Range keys follow pywizlight; never invent a default for an unknown model.
+    public static func parseTemperatureRange(_ data: Data, method: String) -> ClosedRange<Int>? {
+        guard ["getModelConfig", "getUserConfig"].contains(method),
+              let config = result(data, method: method) else { return nil }
+        for key in ["cctRange", "extRange", "whiteRange"] {
+            guard let values = config[key] as? [Any], values.count >= 2 else { continue }
+            let integers = values.compactMap(integer)
+            guard integers.count == values.count, integers.allSatisfy({ $0 > 0 }),
+                  let lower = integers.min(), let upper = integers.max(), lower < upper else { continue }
+            return lower...upper
+        }
+        return nil
+    }
+
+    /// Only the driver constructs params, after capability and value validation.
+    static func setPilot(_ params: [String: Any]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: ["method": "setPilot", "params": params], options: [.sortedKeys])
+    }
+
+    /// A matching method alone is insufficient: require the JSON boolean true and no error.
+    public static func parseSetPilotACK(_ data: Data) -> Bool {
+        guard let reply = result(data, method: "setPilot"),
+              let value = reply["success"] as? NSNumber,
+              CFGetTypeID(value) == CFBooleanGetTypeID() else { return false }
+        return value.boolValue
+    }
 
     /// Returns the bulb MAC from a `registration` reply, or nil.
     public static func parseDiscoveryReply(_ data: Data) -> String? {
@@ -28,14 +58,16 @@ public enum WiZCodec {
     }
 
     public static func parsePilot(_ data: Data) -> DeviceState? {
-        guard let result = result(data, method: "getPilot") else { return nil }
-        var state = DeviceState()
-        state.isOn = result["state"] as? Bool
-        state.brightness = result["dimming"] as? Int
-        if let r = result["r"] as? Int, let g = result["g"] as? Int, let b = result["b"] as? Int {
+        guard result(data, method: "getPilot") != nil,
+              let reply = try? JSONDecoder().decode(PilotReply.self, from: data) else { return nil }
+        let pilot = reply.result
+        if let brightness = pilot.dimming, !(0...100).contains(brightness) { return nil }
+        if let temperature = pilot.temp, temperature <= 0 { return nil }
+        guard [pilot.r, pilot.g, pilot.b].compactMap({ $0 }).allSatisfy({ (0...255).contains($0) }) else { return nil }
+        var state = DeviceState(isOn: pilot.state, brightness: pilot.dimming, colorTemperature: pilot.temp)
+        if let r = pilot.r, let g = pilot.g, let b = pilot.b {
             state.color = RGBColor(red: r, green: g, blue: b)
         }
-        state.colorTemperature = result["temp"] as? Int
         return state
     }
 
@@ -50,8 +82,28 @@ public enum WiZCodec {
 
     // MARK: - Helpers
 
+    // Typed decoding rejects JSON numbers posing as booleans, strings as integers, etc.
+    private struct PilotReply: Decodable {
+        let result: Pilot
+        struct Pilot: Decodable {
+            let state: Bool?
+            let dimming: Int?
+            let r: Int?
+            let g: Int?
+            let b: Int?
+            let temp: Int?
+        }
+    }
+
     private static func request(_ method: String) -> Data {
         Data(#"{"method":"\#(method)","params":{}}"#.utf8)
+    }
+
+    private static func integer(_ value: Any) -> Int? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let integer = value as? Int, number.doubleValue == Double(integer) else { return nil }
+        return integer
     }
 
     private static func json(_ data: Data) -> [String: Any]? {

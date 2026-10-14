@@ -7,7 +7,11 @@ device** still need a real-device check before any write command is sent.
 ## WiZ
 
 Sources:
-- pywizlight `discovery.py` and `bulb.py` — https://github.com/sbidy/pywizlight
+- pywizlight `discovery.py` — https://github.com/sbidy/pywizlight
+- pywizlight [`bulb.py`](https://raw.githubusercontent.com/sbidy/pywizlight/master/pywizlight/bulb.py)
+  (`PilotBuilder`, `_set_rgbww`, `_set_rgb`, configuration queries)
+- pywizlight [`bulblibrary.py`](https://raw.githubusercontent.com/sbidy/pywizlight/master/pywizlight/bulblibrary.py)
+  (`BulbType.from_data`, module classification and `KelvinRange`)
 - WiZ Connected official `wiz-local-control` — https://gitlab.com/wizlighting/wiz-local-control
 - homebridge-wiz-lan `network.ts` (broadcast port 38899, discovery rate floor 5 s)
 
@@ -29,19 +33,68 @@ probe does not leave state behind. Reply source address = bulb IP.
 
 | Method | Params | Returns |
 |---|---|---|
-| `getPilot` | none | `state`, `dimming` (10–100 %), `temp` (K), `r,g,b`, `c,w`, `sceneId`, `rssi`, `mac` |
+| `getPilot` | none | `state`, `dimming` (%), `temp` (K), `r,g,b`, `c,w`, `sceneId`, `rssi`, `mac` |
 | `getSystemConfig` | none | `mac`, `moduleName`, `fwVersion`, `typeId`, `homeId`, ... |
 | `getModelConfig` / `getUserConfig` | none | white ranges (`cctRange`, `extRange`, `whiteRange`) |
 
-### Write method
+### Driver connection and capabilities
 
-`setPilot` with any of: `state` (bool), `dimming` (pywizlight clamps to ≥ 1),
-`r,g,b` (0–255), `c,w` (0–255), `temp` (Kelvin, pywizlight clamps 1000–10000;
-real range comes from `cctRange`), `sceneId`, `speed`. Responses echo
-`{"method":"setPilot","result":{"success":true}}`.
+`WiZDevice.connect` performs only `getSystemConfig` and `getModelConfig`; it
+queries `getUserConfig` only when the model response has no usable temperature
+range. It does not register for pushes, broadcast, or write light state.
+
+- Power and percentage brightness use the verified WiZ pilot protocol.
+- RGB is advertised only when the second underscore-separated component of the
+  reported `moduleName` contains `RGB` (`BulbType.from_data`); discovery metadata
+  alone never enables RGB.
+- Temperature uses the minimum and maximum of the first valid advertised range
+  in `cctRange`, `extRange`, `whiteRange` order. Ranges must contain at least two
+  positive integers with distinct endpoints. Missing, malformed, or timed-out
+  range replies trigger the user-config fallback; if it also has no usable range,
+  temperature is unsupported. No guessed Kelvin defaults are used.
+- Failure to read system configuration aborts connection. Transport errors
+  propagate; optional range-query timeouts leave temperature unsupported.
+
+Parent-observed read-only evidence: `ESP01_SHRGB1C_31`, firmware `1.35.0`,
+`drvConf:[33,1]`; model `cctRange:[2200,2699,6500,6500]`, `nowc:1`, `wcr:33`;
+user `minDimming:0`; pilot `state:true`, `temp:3714`, `dimming:83`, `sceneId:0`.
+These are fixtures/evidence, not source defaults. Real setter readback remains
+an integration check performed by the parent, not by socket-free driver tests.
+
+### Absolute setters (validated before sending)
+
+Every write is a JSON `setPilot` request (one datagram per transmission) to the
+discovered address on UDP 38899. The driver turns the light on for nonzero brightness,
+RGB, and Kelvin commands by sending explicit `state:true`.
+
+| Operation | Exact `params` example | Accepted values |
+|---|---|---|
+| On / off | `{"state":true}` / `{"state":false}` | Boolean state |
+| Brightness | `{"state":true,"dimming":50}` | 1–100 percent; 0 maps to OFF without sending `dimming:0` |
+| Direct RGB | `{"state":true,"r":255,"g":0,"b":0,"c":0,"w":0}` | Every RGB channel 0–255; RGB capability required |
+| Temperature | `{"state":true,"temp":3714}` | Kelvin inside this device's advertised inclusive range |
+
+Direct RGB deliberately follows `_set_rgbww` channel semantics, clearing cold
+and warm white with `c:0,w:0`. It does **not** copy `_set_rgb`'s `rgb2rgbcw`
+perceptual transform. RGB black is still an explicit ON command with zero
+channels; use OFF to turn the light off. Invalid values and unsupported color
+modes send no write packets; values are rejected, not clamped.
+
+A setter succeeds only for a matching `method:"setPilot"`, JSON boolean
+`result.success:true`, and **no** top-level `error` key. A nil reply is a timeout;
+false, numeric/string success values, wrong methods, and malformed JSON are
+invalid responses. An ACK is not a state snapshot: `getState` always requests
+fresh `getPilot`; discovery and setter values are never cached optimistically.
+Missing reported fields remain nil; malformed types/values and empty snapshots
+are rejected rather than presented as real state.
 
 UDP is lossy: pywizlight resends at 0, 0.75, 2.25, 5.25 s ... and matches the
-reply by `method`.
+reply by `method`. Our unchanged transport uses a fresh request socket, filters
+by host, and retries every 0.5 s within a 1.5 s driver timeout. Only idempotent
+absolute setters are exposed—no toggles or relative adjustments. Method matching
+is not authentication or a transaction identifier; an ACK may not prove the
+physical result, so integrations should verify fresh readback. There are no
+cloud calls, credentials, port-forwarding, or firewall changes.
 
 ## CozyLife
 
