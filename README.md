@@ -10,6 +10,9 @@ bar app comes later. CozyLife remains discover-only.
 swift run shl --help       # usage and session commands; no network activity
 swift run shl discover     # read-only discovery of WiZ and CozyLife on the LAN
 swift run shl devices      # read-only WiZ discovery/configuration, then a command session
+
+swift run SmartHomeMenuBar          # native menu bar panel; discovery is manual
+swift run SmartHomeMenuBar --demo   # offline demo with in-memory fixtures, no network
 ```
 
 `devices` prints a numbered list using model, vendor ID, and freshly discovered
@@ -53,6 +56,44 @@ This example performs read-only LAN operations. EOF also ends the session.
 Command errors are reported without ending the session. There is no CozyLife
 control driver in this entry point.
 
+### Native menu bar app
+
+`swift run SmartHomeMenuBar` opens a menu bar panel. Discovery is manual: press
+Discover, then select a device. The app remembers found devices and the selected
+one across panel openings and restarts (identity only, in local UserDefaults; never
+state). A new search updates addresses and adds devices, but keeps lights that did
+not answer, marked "Not found in last search". Right-click a device to rename it
+(local only, up to 40 characters; empty restores the automatic name) or forget it;
+names follow the device across searches, address changes, and restarts.
+When the panel opens, a remembered WiZ selection is reconnected with read-only
+queries. Selecting a WiZ device reads its real state;
+CozyLife devices are listed as discover-only, and no CozyLife control is exposed.
+Each user action sends at most one command: the power button, a temperature
+preset, a color swatch, releasing a slider, or releasing on the color wheel
+(the rainbow button opens it). Dragging a slider or across the wheel sends nothing. Every control is followed by a state read, so the panel
+shows observed state, never an optimistic write. `Unknown` means the device did
+not report that field; reachability starts `Unconfirmed` and becomes `Reachable`
+only after a successful read. The `--demo` mode uses in-memory fixtures and never
+touches the network. Diagnostic modes: `--discover-once` runs one real discovery
+headlessly, prints the result, and exits; `--window` shows the panel in a normal
+window and auto-discovers once on appear; `--window --demo` does the same with
+the offline fixtures (all for development checks only).
+
+### Install as a Mac app
+
+```sh
+scripts/install.sh               # build, sign ad-hoc, install /Applications/Smart Home.app
+scripts/install.sh --build-only  # only build .build/Smart Home.app
+```
+
+The script builds a release binary, wraps it in an app bundle
+(`dev.leoglez.smart-home-local`, menu bar only via `LSUIElement`), signs it
+ad-hoc for this Mac (no Apple Developer account), and replaces any installed copy.
+Rerun it after code changes. On first search macOS asks for **Local Network**
+permission; allow it, or the app finds nothing (System Settings → Privacy &
+Security → Local Network). The installed app keeps its own remembered devices,
+separate from `swift run`.
+
 ### Discovery options and argument safety
 
 `swift run shl discover --timeout 5` adjusts the discovery window. The timeout
@@ -75,11 +116,12 @@ Sources/
     SmartDevice.swift      common interface every vendor implements
     Discovery.swift        DiscoveryProvider + aggregated discovery
     CLI/DeviceSession.swift command parsing, selection, and real state reporting
+    UI/MenuBarModel.swift  observable app model used by the menu bar app
     Transport/             UDP/TCP helpers (BSD sockets)
     Vendors/WiZ/           WiZ codec, driver, and discovery
     Vendors/CozyLife/       CozyLife discovery codec/provider only
   shl/                     executable discovery and command-session wiring
-  (later) SmartHomeMenuBar/ SwiftUI MenuBarExtra app
+  SmartHomeMenuBar/        SwiftUI MenuBarExtra app (manual discovery, explicit apply)
 Tests/SmartHomeCoreTests/   Swift Testing unit tests (fake transports/devices)
 Tests/cli-checks.py         public help/rejected-argument checks (no valid discovery)
 docs/protocols.md          verified protocol notes with sources
@@ -94,7 +136,8 @@ odd/tasks/                 feature plan and progress
   rewriting the command session or future UI.
 - Codecs are pure and unit tested; network I/O stays in transports. The executable
   connects WiZ drivers using fresh discovery results and passes them to the
-  session. The future UI will also depend on `SmartDevice`.
+  session. The menu bar app depends on `SmartDevice` through `MenuBarModel`;
+  neither UI nor CLI knows vendor packet formats.
 
 ## Supported devices and status
 
@@ -105,13 +148,15 @@ odd/tasks/                 feature plan and progress
 
 Phase 4: WiZ CLI control implemented, with fake-device and executable argument
 checks. Real-device CLI acceptance is a separate supervised check. CozyLife
-verification and the native menu bar UI remain future work; see
-`odd/tasks/smart-home-local.md` and `docs/protocols.md`.
+verification remains future work; see `odd/tasks/smart-home-local.md` and
+`docs/protocols.md`. Phase 5: the native menu bar UI is implemented and checked
+with fake devices and the offline `--demo` mode; a visual check on this Mac is the
+remaining evidence.
 
 ## Development checks
 
 ```sh
-swift test --filter DeviceSessionTests
+swift test --filter MenuBarModelTests
 swift test
 python3 -I Tests/cli-checks.py .build/debug/shl
 ```
