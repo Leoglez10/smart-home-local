@@ -55,7 +55,16 @@ public struct BSDUDPTransport: UDPTransport {
             let now = Date()
             if now >= deadline { break }
             if sent < max(sends, 1), now >= nextSend {
-                for target in targets { try send(fd, payload, to: target, port: port) }
+                // One unreachable interface (e.g. a link-local 169.254.x.x adapter) must not
+                // abort discovery on the others; fail only when every target fails.
+                var failures: [String] = []
+                for target in targets {
+                    do { try send(fd, payload, to: target, port: port) }
+                    catch { failures.append(String(describing: error)) }
+                }
+                if failures.count == targets.count {
+                    throw SmartDeviceError.transport(failures.joined(separator: "; "))
+                }
                 sent += 1
                 nextSend = nextSend.addingTimeInterval(interval)
             }
