@@ -58,15 +58,15 @@ Who it is for:
 
 ## Features
 
-- ✅ Finds WiZ and CozyLife devices with each vendor's broadcast discovery (no network scanning).
-- ✅ Power, brightness, color temperature (with Warm / Neutral / Daylight presets) and RGB color for WiZ.
-- ✅ Color swatches plus a color wheel; one command is sent only when you release the control.
-- ✅ Shows the state the light actually reports after every change — never a guess.
-- ✅ Connection indicator: Unconfirmed, Reachable, or Unavailable.
-- ✅ Remembers found lights, the selected light, and your own names for them across restarts.
-- ✅ Rename or forget a light from its right-click menu.
-- ✅ Installs as a normal Mac app that lives only in the menu bar (no Dock icon).
-- ✅ `shl` command-line tool for discovery and an interactive control session.
+- Finds WiZ and CozyLife devices with each vendor's broadcast discovery (no network scanning).
+- Power, brightness, color temperature (with Warm / Neutral / Daylight presets) and RGB color for WiZ.
+- Color swatches plus a color wheel; one command is sent only when you release the control.
+- Shows the state the light actually reports after every change — never a guess.
+- Connection indicator: Unconfirmed, Reachable, or Unavailable.
+- Remembers found lights, the selected light, and your own names for them across restarts.
+- Rename or forget a light from its right-click menu.
+- Installs as a normal Mac app that lives only in the menu bar (no Dock icon).
+- `shl` command-line tool for discovery and an interactive control session.
 - 🧪 CozyLife is **discover-only**: it is listed, but it cannot be controlled yet.
 
 No screenshots yet _(pending)_.
